@@ -1,0 +1,50 @@
+[
+  {
+    "query": "What is the current status of NCT04280705?",
+    "intent": "nct_lookup",
+    "expected_fields": ["overall_status", "sponsor", "phase"],
+    "notes": "Moderna COVID-19 vaccine trial — well-known study with results"
+  },
+  {
+    "query": "Is NCT02993237 FDAAA compliant? Has it submitted results?",
+    "intent": "fdaaa_check",
+    "expected_fields": ["fdaaa_status", "results_due_date", "has_results"],
+    "notes": "Interventional drug trial — should trigger FDAAA compliance logic"
+  },
+  {
+    "query": "Find all Phase 3 oncology trials started between 2022 and 2023",
+    "intent": "search_trials",
+    "expected_fields": ["condition", "phase", "start_date"],
+    "notes": "Tests search_studies with condition + phase + date range filters"
+  },
+  {
+    "query": "What trials is Eli Lilly running for breast cancer?",
+    "intent": "search_trials",
+    "expected_fields": ["sponsor", "condition"],
+    "notes": "Tests sponsor + condition search"
+  },
+  {
+    "query": "What were the results of the Pfizer BNT162b2 COVID vaccine trial?",
+    "intent": "web_research",
+    "expected_fields": ["efficacy", "safety", "approval"],
+    "notes": "Pure web research query — should not call CT API"
+  },
+  {
+    "query": "Which oncology trials sponsored by AstraZeneca are currently recruiting?",
+    "intent": "search_trials",
+    "expected_fields": ["status", "sponsor", "condition"],
+    "notes": "Tests sponsor + status filter (RECRUITING)"
+  },
+  {
+    "query": "What is the FDAAA status of NCT03017521 and when were results due?",
+    "intent": "fdaaa_check",
+    "expected_fields": ["fdaaa_status", "results_due_date", "days_overdue"],
+    "notes": "Direct FDAAA compliance check with specific NCT ID"
+  },
+  {
+    "query": "Tell me everything about NCT01668784 including its results and any news",
+    "intent": "hybrid",
+    "expected_fields": ["status", "results", "news", "fdaaa_status"],
+    "notes": "Hybrid query requiring both CT API and web search"
+  }
+]
