@@ -44,7 +44,7 @@ def search_by_nct_id(nct_id: str, max_results: int = 5) -> list[str]:
         resp = requests.get(
             f"{_BASE_URL}esearch.fcgi",
             params={**base_params, "term": f"{nct_id}[si]"},
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         ids_a = resp.json().get("esearchresult", {}).get("idlist", [])
@@ -65,7 +65,7 @@ def search_by_nct_id(nct_id: str, max_results: int = 5) -> list[str]:
             resp = requests.get(
                 f"{_BASE_URL}esearch.fcgi",
                 params={**base_params, "term": nct_id},
-                timeout=10,
+                timeout=15,
             )
             resp.raise_for_status()
             ids_b = resp.json().get("esearchresult", {}).get("idlist", [])
@@ -106,7 +106,7 @@ def fetch_abstracts(pmids: list[str]) -> list[dict]:
                 "tool": _TOOL,
                 "email": _EMAIL,
             },
-            timeout=10,
+            timeout=15,
         )
         resp.raise_for_status()
         elapsed = int((time.time() - t0) * 1000)
@@ -250,7 +250,7 @@ def search_pubmed_for_trial(
                     "tool": _TOOL,
                     "email": _EMAIL,
                 },
-                timeout=10,
+                timeout=15,
             )
             resp.raise_for_status()
             fallback_pmids = resp.json().get("esearchresult", {}).get("idlist", [])
