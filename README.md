@@ -7,9 +7,9 @@
 [![ClinicalTrials.gov](https://img.shields.io/badge/ClinicalTrials.gov-v2%20API-0066CC)](https://clinicaltrials.gov/data-api/api)
 [![Tavily](https://img.shields.io/badge/Tavily-Advanced%20Search-F97316)](https://tavily.com)
 
-A **production-quality multi-agent AI system** that answers any question about clinical trials — trial status, FDAAA compliance, sponsor pipelines, regulatory news — by orchestrating six specialized LLM agents across ClinicalTrials.gov and the open web, with a built-in quality-check retry loop that scores every answer before showing it to the user.
+A **production-quality multi-agent AI system** that answers any question about clinical trials — trial status, FDAAA compliance, sponsor pipelines, regulatory news, and published efficacy data — by orchestrating six specialized LLM agents across ClinicalTrials.gov, PubMed, and the open web, with a built-in quality-check retry loop that scores every answer before showing it to the user.
 
-Built as a portfolio project demonstrating production-grade agentic system design: stateful graph orchestration, intent-aware token optimization, LLM-graded quality assurance, streaming UI, and safe API key handling.
+Built as a portfolio project demonstrating production-grade agentic system design: stateful graph orchestration, intent-aware token optimization, multi-source data fusion (registry + peer-reviewed literature + web), LLM-graded quality assurance, streaming UI, and safe API key handling.
 
 ---
 
@@ -29,6 +29,7 @@ Built as a portfolio project demonstrating production-grade agentic system desig
 | **FDAAA compliance** | `Is NCT02993237 FDAAA compliant? When were results due?` |
 | **Sponsor pipeline** | `What Phase 3 trials is Eli Lilly running for breast cancer?` |
 | **Condition search** | `Find recruiting Phase 3 oncology trials started after 2022` |
+| **Published outcomes** | `What are the published efficacy results for NCT02978625?` |
 | **Regulatory news** | `What happened with the Pfizer BNT162b2 trial outcomes?` |
 | **Deep dive** | `Tell me everything about NCT01668784 including its results` |
 | **Follow-up** | `What about its FDAAA compliance?` *(uses session context)* |
@@ -55,7 +56,7 @@ User Query
 │  CT Retrieval   │──▶│  Web Intelligence           │
 │  Claude Haiku   │   │  Claude Sonnet / Haiku      │
 │  CT.gov v2 API  │   │  Tavily advanced search     │
-│  FDAAA checker  │   │  Pharma/regulatory domains  │
+│  FDAAA checker  │   │  PubMed / NCBI E-utilities  │
 └────────┬────────┘   └─────────────┬───────────────┘
          │                          │
          └────────────┬─────────────┘
@@ -114,9 +115,11 @@ User Query
 - **Six-agent LangGraph pipeline** with conditional routing, quality-check retry loop, and error recovery
 - **Intent-aware model selection** — Haiku for simple lookups, Sonnet for hybrid/research; per-intent token caps
 - **FDAAA compliance checker** — applicable trial determination, 12-month results window, days-overdue calculation
+- **PubMed integration** — NCBI E-utilities search for peer-reviewed abstracts linked to NCT IDs; trial acronym extraction (KEYNOTE-189, MONARCH-2, etc.) as fallback; PubMed results prioritised over web sources in synthesis
+- **Three-source data fusion** — ClinicalTrials.gov registry data + PubMed published abstracts + Tavily web search, each cited separately
 - **Streaming responses** — word-by-word output with live agent progress timeline
 - **Structured trial cards** — clickable NCT ID links, status badges, 7-cell metadata grid
-- **Four-dimensional quality scoring** — faithfulness, completeness, hallucination risk, source coverage
+- **Four-dimensional quality scoring** — faithfulness, completeness, hallucination risk, source coverage (PubMed = premium score)
 - **One-hour TTL cache** for ClinicalTrials.gov API calls
 - **Export to Markdown** — download any answer with full citations
 - **Session rate limiting** — configurable query cap with sidebar progress bar
@@ -209,10 +212,10 @@ MAX_QUERIES_PER_SESSION = "20"
 |---|---|---|---|---|
 | **Query Router** | Haiku | Intent classification, NCT ID extraction, routing flags | `user_query`, `conversation_history` | `query_intent`, `extracted_nct_ids`, `search_params`, `requires_ct_api`, `requires_web_search` |
 | **CT Retrieval** | — | ClinicalTrials.gov v2 fetch, FDAAA computation, TTL cache | `extracted_nct_ids`, `search_params`, `query_intent` | `ct_api_results`, `fdaaa_status_data`, `retrieval_sources` |
-| **Web Intelligence** | Haiku/Sonnet | Tavily advanced search across pharma/regulatory sources | `user_query`, `query_intent` | `web_search_results` |
-| **Synthesis** | Haiku or Sonnet | Generate sourced answer; revision on quality feedback | `ct_api_results`, `web_search_results`, `quality_feedback` | `synthesized_answer`, `answer_confidence`, `citations` |
-| **Quality Check** | Haiku | 4-axis LLM scoring; generates targeted revision feedback | `synthesized_answer`, `ct_api_results`, `user_query` | `quality_scores`, `quality_passed`, `quality_feedback`, `revision_count` |
-| **Formatter** | — | Inject citations, quality badge, markdown structure | `synthesized_answer`, `citations`, `metrics_summary` | `final_answer` |
+| **Web Intelligence** | Haiku/Sonnet | Tavily web search + PubMed abstract retrieval via NCBI E-utilities; triggered for outcome/results queries | `user_query`, `query_intent`, `ct_api_results` | `web_search_results`, `pubmed_results`, `pubmed_papers_found`, `pubmed_triggered` |
+| **Synthesis** | Haiku or Sonnet | Generate sourced answer from CT.gov + PubMed + web; revision on quality feedback; peer-reviewed data prioritised | `ct_api_results`, `web_search_results`, `pubmed_results`, `quality_feedback` | `synthesized_answer`, `answer_confidence`, `citations` |
+| **Quality Check** | Haiku | 4-axis LLM scoring; generates targeted revision feedback; PubMed sources count as premium for source coverage | `synthesized_answer`, `ct_api_results`, `user_query`, `citations` | `quality_scores`, `quality_passed`, `quality_feedback`, `revision_count` |
+| **Formatter** | — | Inject citations (CT.gov / PubMed / Web labelled separately), quality badge, markdown structure | `synthesized_answer`, `citations`, `metrics_summary` | `final_answer` |
 
 ---
 
@@ -225,7 +228,7 @@ Every answer passes through four independent scoring dimensions before reaching 
 | **Faithfulness** | Proportion of factual claims verifiable in retrieved sources | ≥ 85% | 40% |
 | **Completeness** | Whether all sub-questions implied by the query were addressed | ≥ 80% | 30% |
 | **Hallucination Risk** | Inverse of: unverified NCT IDs, statistics not in sources, definitive future claims | ≥ 80% | 20% |
-| **Source Coverage** | Correct source types present for the query intent | ≥ 75% | 10% |
+| **Source Coverage** | Correct source types present for the query intent; PubMed = premium score for outcome queries | ≥ 75% | 10% |
 
 ```
 Grade A  (≥ 90%)  ✅  High confidence — safe to act on
@@ -244,8 +247,10 @@ Grade F  (< 60%)  🔴  Low confidence — do not rely on without verification
 | LLM provider | [Claude (Anthropic)](https://anthropic.com) — Haiku + Sonnet | Best-in-class instruction following; intent-matched model sizing |
 | LLM framework | [LangChain 0.3+](https://github.com/langchain-ai/langchain) | `ChatAnthropic` abstraction, message formatting |
 | Trial data | [ClinicalTrials.gov v2 REST API](https://clinicaltrials.gov/data-api/api) | Authoritative structured registry; no authentication required |
+| Published literature | [NCBI E-utilities](https://www.ncbi.nlm.nih.gov/books/NBK25499/) (PubMed) | Peer-reviewed abstracts linked to NCT IDs; free, no API key required |
 | Web search | [Tavily](https://tavily.com) advanced mode | Deep pharma/regulatory domain coverage; returns content, not just links |
 | UI | [Streamlit 1.35+](https://streamlit.io) | Rapid deployment; `st.status`, `st.write_stream`, `st.download_button` |
+| XML parsing | [lxml 4.9+](https://lxml.de/) | Fast, standards-compliant PubMed efetch XML parsing |
 | SSL compatibility | [truststore](https://github.com/sethmlarson/truststore) | Handles corporate CA injection transparently |
 
 ---
@@ -267,6 +272,8 @@ clinical-trials-agent/
 │   └── formatter.py          # Agent 6 — citation injection + markdown
 ├── tools/
 │   ├── clinical_trials_api.py  # CT.gov v2 client, FDAAA logic, TTL cache
+│   ├── pubmed_search.py        # NCBI E-utilities client — esearch + efetch, acronym fallback
+│   ├── web_search.py           # Tavily advanced search — primary + regulatory news
 │   └── metrics.py              # Faithfulness, completeness, hallucination, coverage scorers
 ├── prompts/
 │   └── templates.py            # All system prompts and eval templates
@@ -281,11 +288,12 @@ clinical-trials-agent/
 ## Limitations
 
 - **Data freshness** — ClinicalTrials.gov data reflects the last sponsor update; some registries lag by weeks.
-- **Results data** — the registry's `resultsSection` is sparse; published outcomes require web search.
+- **Results data** — the registry's `resultsSection` is sparse; PubMed integration covers published abstracts, but not all trials have indexed papers (depends on authors registering the NCT ID in paper metadata or using a recognisable trial acronym like KEYNOTE-189).
+- **PubMed search precision** — NCT ID text search returns 0 results in NCBI's index; the system falls back to trial acronym extraction, then first-5-word keyword search. Generic CT.gov titles without a trial acronym yield broad, less-targeted results.
 - **FDAAA edge cases** — trials with partial dates, phased designs, or pre-2007 grandfathering should be verified by a regulatory professional. This tool is informational, not a legal compliance determination.
 - **Web search scope** — limited to Tavily's index; breaking news (< 24h) may not appear.
 - **No EMA/WHO/ISRCTN data** — only ClinicalTrials.gov (US registry) is queried directly.
-- **Rate limits** — CT.gov enforces rate limits; queries returning > 100 studies may be slow.
+- **Rate limits** — CT.gov enforces rate limits; queries returning > 100 studies may be slow. NCBI E-utilities allows up to 3 requests/second without an API key.
 - **Quality scores are probabilistic** — LLM-based scoring is not deterministic; treat scores as signals, not ground truth.
 - **Session memory only** — conversation context is not persisted across browser sessions.
 
@@ -296,7 +304,7 @@ clinical-trials-agent/
 ### Near-term (next 3 months)
 
 - [ ] **Multi-registry support** — add EMA EudraCT, WHO ICTRP, and ISRCTN as retrieval sources alongside CT.gov
-- [ ] **PubMed integration** — directly query NCBI E-utilities for published trial results linked to NCT IDs
+- [ ] **PubMed full-text links** — surface DOI + open-access PDF links from efetch so users can read the full paper, not just the abstract
 - [ ] **PDF report export** — generate a structured one-page PDF summary per trial using `reportlab` or `weasyprint`
 - [ ] **Async pipeline execution** — run CT retrieval and web search concurrently with `asyncio` to cut latency by ~40%
 - [ ] **Evaluation harness** — golden Q&A dataset of 50 clinical trial questions with ground-truth answers for offline quality regression testing
